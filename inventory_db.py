@@ -2,7 +2,12 @@ import sqlite3
 from pathlib import Path
 
 DB_PATH = Path(__file__).parent / "inventory.db"
-
+# Each product with its supplier's name. Shared by get_product and search_products.
+PRODUCT_SELECT = (
+    "SELECT p.product_id, p.SKU, p.product_name, p.category, s.supplier_name, "
+    "p.price_cents, p.quantity, p.reorder_level "
+    "FROM products p JOIN suppliers s ON s.supplier_id = p.supplier_id"
+)
 
 def connect(path=DB_PATH):
     """Open a connection with foreign keys on and rows readable by column name."""
@@ -30,11 +35,7 @@ def add_product(connection, sku, name, category, supplier_id,
 def get_product(connection, product_id):
     """Return one product with its supplier's name, or None if there is no such product."""
     return connection.execute(
-        "SELECT p.product_id, p.SKU, p.product_name, p.category, s.supplier_name, "
-        "p.price_cents, p.quantity, p.reorder_level "
-        "FROM products p JOIN suppliers s ON s.supplier_id = p.supplier_id "
-        "WHERE p.product_id = ?",
-        (product_id,),
+        PRODUCT_SELECT + " WHERE p.product_id = ?", (product_id,)
     ).fetchone()
 
 
@@ -62,3 +63,30 @@ def delete_product(connection, product_id):
     )
     connection.commit()
     return cursor.rowcount == 1
+
+def search_products(connection, text="", category=None, max_price_cents=None,
+                    in_stock_only=False, low_stock_only=False):
+    """Return products whose name, SKU, or supplier name contains the text, sorted by name.
+
+    The optional filters can be combined. Only fixed pieces of SQL are added
+    to the query; every value goes in through a placeholder.
+    """
+    pattern = f"%{text}%"
+    sql = PRODUCT_SELECT + (
+        " WHERE (p.product_name LIKE ? OR p.SKU LIKE ? OR s.supplier_name LIKE ?)"
+    )
+    params = [pattern, pattern, pattern]
+
+    if category is not None:
+        sql += " AND p.category = ?"
+        params.append(category)
+    if max_price_cents is not None:
+        sql += " AND p.price_cents <= ?"
+        params.append(max_price_cents)
+    if in_stock_only:
+        sql += " AND p.quantity > 0"
+    if low_stock_only:
+        sql += " AND p.quantity <= p.reorder_level"
+
+    sql += " ORDER BY p.product_name"
+    return connection.execute(sql, params).fetchall()
