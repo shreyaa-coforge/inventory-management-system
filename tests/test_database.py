@@ -1,6 +1,9 @@
 import sqlite3
+
 import pytest
-from pathlib import Path
+
+import seed_db
+
 
 def test_schema_tables_exist(connection):
     """Verify all five required tables exist in the database."""
@@ -48,3 +51,9 @@ def test_stock_movement_reason_constraint(connection):
             """INSERT INTO stock_movements (product_id, quantity_change, reason, movement_timestamp)
                VALUES (?, 5, 'invalid_reason', '2026-10-30 12:00:00');""", (prod_id,)
         )
+
+def test_running_schema_twice_keeps_data(connection):
+    """Running schema.sql a second time neither fails nor erases rows."""
+    seed_db.create_tables(connection)
+    count = connection.execute("SELECT COUNT(*) FROM products").fetchone()[0]
+    assert count == 12
