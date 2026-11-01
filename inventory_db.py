@@ -1,9 +1,12 @@
+import os
 import sqlite3
 from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "inventory.db"
+# Where the database file lives. The INVENTORY_DB environment variable can
+# override it, which is how the container puts it in /data.
+DB_PATH = Path(os.environ.get("INVENTORY_DB", Path(__file__).parent / "inventory.db"))
 # Each product with its supplier's name. Shared by get_product and search_products.
 PRODUCT_SELECT = (
     "SELECT p.product_id, p.SKU, p.product_name, p.category, s.supplier_name, "
