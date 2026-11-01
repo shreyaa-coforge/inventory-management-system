@@ -90,3 +90,47 @@ def search_products(connection, text="", category=None, max_price_cents=None,
 
     sql += " ORDER BY p.product_name"
     return connection.execute(sql, params).fetchall()
+
+# ---------- Reports ----------
+# Money stays in whole cents here. The menu formats it with two decimals.
+
+def stock_value_by_supplier(connection):
+    """Return each supplier's name and total stock value (price x quantity), highest first."""
+    return connection.execute(
+        "SELECT s.supplier_name, SUM(p.price_cents * p.quantity) AS stock_value_cents "
+        "FROM suppliers s JOIN products p ON p.supplier_id = s.supplier_id "
+        "GROUP BY s.supplier_id, s.supplier_name "
+        "ORDER BY stock_value_cents DESC"
+    ).fetchall()
+
+
+def low_stock(connection):
+    """Return products at or below their reorder level, with how many units short they are."""
+    return connection.execute(
+        "SELECT SKU, product_name, quantity, reorder_level, "
+        "reorder_level - quantity AS units_short "
+        "FROM products "
+        "WHERE quantity <= reorder_level "
+        "ORDER BY units_short DESC, product_name"
+    ).fetchall()
+
+
+def sales_by_product(connection):
+    """Return each sold product with units sold and revenue, highest revenue first."""
+    return connection.execute(
+        "SELECT p.product_name, SUM(si.units) AS units_sold, "
+        "SUM(si.units * si.unit_price_cents) AS revenue_cents "
+        "FROM products p JOIN sale_items si ON si.product_id = p.product_id "
+        "GROUP BY p.product_id, p.product_name "
+        "ORDER BY revenue_cents DESC, p.product_name"
+    ).fetchall()
+
+
+def never_sold(connection):
+    """Return products that appear in no sale."""
+    return connection.execute(
+        "SELECT p.SKU, p.product_name "
+        "FROM products p LEFT JOIN sale_items si ON si.product_id = p.product_id "
+        "WHERE si.product_id IS NULL "
+        "ORDER BY p.product_name"
+    ).fetchall()
