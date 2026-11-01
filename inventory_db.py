@@ -1,8 +1,12 @@
+import os
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "inventory.db"
+# Where the database file lives. The INVENTORY_DB environment variable can
+# override it, which is how the container puts it in /data.
+DB_PATH = Path(os.environ.get("INVENTORY_DB", Path(__file__).parent / "inventory.db"))
 # Each product with its supplier's name. Shared by get_product and search_products.
 PRODUCT_SELECT = (
     "SELECT p.product_id, p.SKU, p.product_name, p.category, s.supplier_name, "
@@ -219,3 +223,15 @@ def record_sale(connection, items, now=None):
             change_stock(connection, product_id, -units)
             log_movement(connection, product_id, -units, "sale", timestamp)
     return sale_no
+
+# ---------- Backup ----------
+
+def backup_database(source_path, backup_folder):
+    """Copy a live SQLite database safely and return the backup file's path."""
+    backup_folder = Path(backup_folder)
+    backup_folder.mkdir(exist_ok=True)
+    backup_path = backup_folder / f"inventory-{datetime.now(UTC):%Y-%m-%d}.db"
+    with closing(connect(source_path)) as source, \
+            closing(connect(backup_path)) as destination:
+        source.backup(destination)
+    return backup_path
