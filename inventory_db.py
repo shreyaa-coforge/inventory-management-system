@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import UTC, datetime
 from pathlib import Path
 
 DB_PATH = Path(__file__).parent / "inventory.db"
@@ -134,3 +135,87 @@ def never_sold(connection):
         "WHERE si.product_id IS NULL "
         "ORDER BY p.product_name"
     ).fetchall()
+
+# ---------- Stock changes and sales ----------
+# Each public function below is one transaction: every step is saved, or none is.
+
+def timestamp_text(now=None):
+    """Return the given time, or the current UTC time, as text like 2026-11-01 09:00:00."""
+    if now is None:
+        now = datetime.now(UTC)
+    return now.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def log_movement(connection, product_id, quantity_change, reason, timestamp):
+    """Insert one stock movement. Never commits, so it can run inside a transaction."""
+    connection.execute(
+        "INSERT INTO stock_movements "
+        "(product_id, quantity_change, reason, movement_timestamp) VALUES (?, ?, ?, ?)",
+        (product_id, quantity_change, reason, timestamp),
+    )
+
+
+def change_stock(connection, product_id, quantity_change):
+    """Add a signed amount to a product's stock. Never commits.
+
+    Raises ValueError for an unknown product, and sqlite3.IntegrityError
+    if the stock would go below zero.
+    """
+    cursor = connection.execute(
+        "UPDATE products SET quantity = quantity + ? WHERE product_id = ?",
+        (quantity_change, product_id),
+    )
+    if cursor.rowcount == 0:
+        raise ValueError(f"No product with id {product_id}")
+
+
+def restock(connection, product_id, amount, now=None):
+    """Increase a product's stock by a positive amount and log a restock movement."""
+    if amount <= 0:
+        raise ValueError("Restock amount must be more than 0")
+    with connection:
+        change_stock(connection, product_id, amount)
+        log_movement(connection, product_id, amount, "restock", timestamp_text(now))
+
+
+def adjust_stock(connection, product_id, quantity_change, now=None):
+    """Change stock by a signed amount for damage or a recount, and log an adjustment.
+
+    Raises sqlite3.IntegrityError, and changes nothing, if stock would go negative.
+    """
+    with connection:
+        change_stock(connection, product_id, quantity_change)
+        log_movement(connection, product_id, quantity_change, "adjustment",
+                     timestamp_text(now))
+
+
+def record_sale(connection, items, now=None):
+    """Record a sale of (product_id, units) pairs and return the new sale number.
+
+    For each line: add it at the product's current price, reduce the stock,
+    and log a sale movement. If any line fails, the whole sale is undone.
+    """
+    product_ids = [product_id for product_id, units in items]
+    if len(product_ids) != len(set(product_ids)):
+        raise ValueError("The same product appears twice in this sale")
+
+    timestamp = timestamp_text(now)
+    with connection:  # commits on success, rolls back everything on any error
+        cursor = connection.execute(
+            "INSERT INTO sales (sale_timestamp) VALUES (?)", (timestamp,)
+        )
+        sale_no = cursor.lastrowid
+        for product_id, units in items:
+            product = connection.execute(
+                "SELECT price_cents FROM products WHERE product_id = ?", (product_id,)
+            ).fetchone()
+            if product is None:
+                raise ValueError(f"No product with id {product_id}")
+            connection.execute(
+                "INSERT INTO sale_items (sale_no, product_id, units, unit_price_cents) "
+                "VALUES (?, ?, ?, ?)",
+                (sale_no, product_id, units, product["price_cents"]),
+            )
+            change_stock(connection, product_id, -units)
+            log_movement(connection, product_id, -units, "sale", timestamp)
+    return sale_no
