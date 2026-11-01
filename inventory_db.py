@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -219,3 +220,15 @@ def record_sale(connection, items, now=None):
             change_stock(connection, product_id, -units)
             log_movement(connection, product_id, -units, "sale", timestamp)
     return sale_no
+
+# ---------- Backup ----------
+
+def backup_database(source_path, backup_folder):
+    """Copy a live SQLite database safely and return the backup file's path."""
+    backup_folder = Path(backup_folder)
+    backup_folder.mkdir(exist_ok=True)
+    backup_path = backup_folder / f"inventory-{datetime.now(UTC):%Y-%m-%d}.db"
+    with closing(connect(source_path)) as source, \
+            closing(connect(backup_path)) as destination:
+        source.backup(destination)
+    return backup_path
