@@ -52,3 +52,31 @@ Money is stored as whole cents and shown here with two decimals.
 |---|---|
 | SKU-S204 | Dust Masks 10pk |
 | SKU-S203 | Earplugs Box |
+
+## What happens when a sale fails halfway
+
+`record_sale` runs every step inside one `with connection:` block. Below, line 1
+(1 Utility Knife) is valid, but line 2 asks for 99 Tape Measures when only 20 are
+in stock. Line 1 was already inserted and its stock reduced when line 2 failed,
+but the rollback undid it too.
+
+```
+Before:
+  sales: 5
+  sale_items: 12
+  stock_movements: 0
+  Tape Measure stock: 20
+  Utility Knife stock: 15
+
+Call: db.record_sale(connection, [(4, 1), (3, 99)])
+Error: CHECK constraint failed: quantity >= 0
+
+After:
+  sales: 5
+  sale_items: 12
+  stock_movements: 0
+  Tape Measure stock: 20
+  Utility Knife stock: 15
+```
+
+Nothing changed: no sale row, no sale lines, no stock movements, and no stock change.
