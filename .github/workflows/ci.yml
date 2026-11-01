@@ -33,3 +33,12 @@ jobs:
         run: pip install ruff
       - name: Run ruff
         run: ruff check .
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -t inventory:ci .
+      - name: Run the tests inside the image
+        run: docker run --rm inventory:ci python -m pytest -q
