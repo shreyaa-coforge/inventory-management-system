@@ -50,6 +50,11 @@ def ask_optional_int(prompt):
         except ValueError:
             print("Please type a whole number, or press Enter to skip.")
 
+def show_low_stock_banner(connection):
+    """Print how many products are at or below their reorder level."""
+    count = len(db.low_stock(connection))
+    print(f"*** Low stock: {count} product(s) at or below reorder level ***")
+
 
 def print_products(products):
     if not products:
@@ -178,6 +183,7 @@ MENU = {
 
 def main():
     with closing(db.connect()) as connection:
+        show_low_stock_banner(connection)
         while True:
             print()
             for key, (label, _action) in MENU.items():
